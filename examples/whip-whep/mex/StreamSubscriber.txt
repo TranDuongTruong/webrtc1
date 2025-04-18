@@ -1,0 +1,72 @@
+import { useRef, useState } from "react";
+import { iceServers } from "../utils/iceServers";
+
+const StreamSubscriber = () => {
+    const screenRef = useRef(null);
+    const cameraRef = useRef(null);
+    const audioRef = useRef(null);
+    const [peerConnection, setPeerConnection] = useState(null);
+
+    const startSubscribing = async () => {
+        try {
+            const pc = new RTCPeerConnection(iceServers);
+
+            pc.ontrack = (event) => {
+                const track = event.track;
+                const stream = event.streams[0];
+
+                console.log("📥 Received track:", track.kind, "ID:", track.id);
+
+                if (track.kind === "video") {
+                    if (!screenRef.current.srcObject) {
+                        screenRef.current.srcObject = stream;
+                        console.log("✅ Assigned to screen video:", track.id);
+                    } else if (!cameraRef.current.srcObject) {
+                        cameraRef.current.srcObject = stream;
+                        console.log("✅ Assigned to camera video:", track.id);
+                    }
+                } else if (track.kind === "audio") {
+                    audioRef.current.srcObject = stream;
+                    console.log("✅ Assigned to audio track:", track.id);
+                }
+            };
+
+            pc.addTransceiver('video', { direction: 'recvonly' });
+            pc.addTransceiver('video', { direction: 'recvonly' });
+            pc.addTransceiver('audio', { direction: 'recvonly' });
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            const response = await fetch("http://localhost:8082/whep", {
+                method: "POST",
+                body: pc.localDescription.sdp,
+                headers: {
+                    "Content-Type": "application/sdp",
+                    "Accept": "*/*",
+                },
+                mode: "cors",
+            });
+
+            const answer = await response.text();
+            await pc.setRemoteDescription({ sdp: answer, type: "answer" });
+
+        } catch (error) {
+            console.error("❌ Error in startSubscribing:", error);
+        }
+    };
+
+
+
+    return (
+        <div>
+            <h2>📺 Live Stream Viewer</h2>
+            <video ref={screenRef} width="640" height="480" autoPlay playsInline controls />
+            <video ref={cameraRef} autoPlay playsInline muted style={{ width: "150px", height: "100px" }} />
+            <audio ref={audioRef} autoPlay controls />
+            <button onClick={startSubscribing}>▶️ Start Viewing</button>
+        </div>
+    );
+};
+
+export default StreamSubscriber;
